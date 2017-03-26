@@ -1,0 +1,176 @@
+---
+title: "Practical Machine Learning Course Project"
+author: "John Ng"
+output:
+  html_document:
+    keep_md: yes
+  pdf_document: default
+---
+
+## Introduction
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible 
+to collect a large amount of data about personal activity relatively 
+inexpensively. These type of devices are part of the quantified self movement - 
+a group of enthusiasts who take measurements about themselves regularly to 
+improve their health, to find patterns in their behavior, or because they are 
+tech geeks. One thing that people regularly do is quantify how much of a 
+particular activity they do, but they rarely quantify how well they do it.   
+
+In this project, 6 participants were asked to perform barbell lifts in 5 
+different ways as follows.  
+
+1. Exactly according to the specification (Class A)  
+2. Throwing the elbows to the front (Class B)  
+3. Lifting the dumbbell only halfway (Class C)  
+4. Lowering the dumbbell only halfway (Class D)  
+5. Throwing the hips to the front (Class E)
+
+I will use data from accelerometers on the belt, forearm, arm and dumbell to 
+predict their performance using classification tree or random forest. The 
+accuracy will be measured and the best model will be chosen. Lastly, we will use 
+the best prediction model to predict the preformance of 20 barbell lift.  
+
+The data we are using is coming from the website http://groupware.les.inf.puc-rio.br/har.
+
+##Load Package
+
+A number of packages are required to load, including `caret`, `rpart`, `rattle` 
+and `randomForest`.
+
+```{r loadpackage}
+library(caret)
+library(rpart)
+library(rattle)
+library(randomForest)
+```
+
+##Loading the data
+
+We first read the 
+[training dataset](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv) 
+and [testing dataset](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv) 
+we downloaded from the course website.
+
+```{r dataload, cache=TRUE}
+TrainSet <- read.csv("pml-training.csv", sep=",", header=TRUE, na.strings = c("NA", "#DIV/0!"))
+TestSet <- read.csv("pml-testing.csv", sep=",", header=TRUE, na.strings = c("NA", "#DIV/0!"))
+dim(TrainSet)
+dim(TestSet)
+```
+
+Let's take a look at the first few rows of the data.
+
+```{r viewdata, cache=TRUE}
+head(TrainSet)
+```
+
+After viewing the data, it is found that a number of fields are having NA value. 
+It would be a good idea if we remove these NA columns and not using this in the 
+prediction model. The NA columns will also be removed in the final testing set.
+
+```{r removeNA, cache=TRUE}
+TrainSet <- TrainSet[,(colSums(is.na(TrainSet)) == 0)]
+dim(TrainSet)
+
+TestSet <- TestSet[,(colSums(is.na(TestSet)) == 0)]
+dim(TestSet)
+```
+
+We also preprocess our data before building model.
+
+```{r preProcess, cache=TRUE}
+NumIndex <- which(lapply(TrainSet, class) %in% "numeric")
+
+PreProcessModel <-preProcess(TrainSet[, NumIndex], method=c('center', 'scale'))
+
+PreProcessedTrainSet <- predict(PreProcessModel, TrainSet[, NumIndex])
+PreProcessedTrainSet$classe <- TrainSet$classe
+
+PreProcessedTestSet <-predict(PreProcessModel, TestSet[, NumIndex])
+```
+
+## Making Training and Testing Data Partition
+
+In order to perform cross-validation, a training subset for model prediction is 
+created with 60% of the original training set and the remaining 40% to be used 
+as the testing set for us to measure the accuracy and select the best model.
+
+```{r parition, cache=TRUE}
+set.seed(12031987)
+inTrain = createDataPartition(PreProcessedTrainSet$classe, p=0.75, list=FALSE)
+TrainingData = PreProcessedTrainSet[ inTrain,]
+ValidateData = PreProcessedTrainSet[-inTrain,]
+```
+
+The training subset have `r nrow(TrainingData)` records while the testing subset 
+have `r nrow(ValidateData)` records.
+
+## Prediction Model 
+
+We are going to use Classification Tree and Random Forest to predict the result.
+
+### Classification Tree
+
+The following R Code build a classification tree model on the training subset.
+
+```{r rpart, cache=TRUE}
+mod_rpart <-train(classe~.,method="rpart", data=TrainingData)
+print(mod_rpart$finalModel)
+fancyRpartPlot(mod_rpart$finalModel)
+```
+
+### Random Forest
+
+The following R Code build a random forest model on the training subset.
+
+```{r rf, cache=TRUE}
+mod_rf <-train(classe~.,method="rf", data=TrainingData, 
+               trControl=trainControl(method='cv'), number=5, 
+               allowParallel=TRUE, importance=TRUE)
+print(mod_rf)
+```
+
+## Model Evaluation
+
+We build two model, Classification Tree and Random Forest, from the training 
+subset of the data. We now use the training subset data to predict the result 
+and compare with the actual result to build a confusion Matrix. Accuracy of the 
+Prediction is recorded and is used to evaluate the best model for the final 
+prediction on the 20 testing data.
+
+### Classification Tree
+
+The confusion Matrix of Classification Tree is generated on the testing subset 
+data.
+
+```{r rpartPredict, cache=TRUE}
+predict_rpart <- predict(mod_rpart, ValidateData)
+confmat_rpart <- confusionMatrix(ValidateData$classe, predict_rpart)
+confmat_rpart
+```
+
+The confusion Matrix of Random Forest is generated on the testing subset data.
+
+### Random Forest
+```{r rfPredict, cache=TRUE}
+predict_rf <- predict(mod_rf, ValidateData)
+confmat_rf <- confusionMatrix(ValidateData$classe, predict_rf)
+confmat_rf
+```
+
+Accuracy of Classification Tree: `r confmat_rpart$overall["Accuracy"]`  
+Accuracy of Random Forest: `r confmat_rf$overall["Accuracy"]`  
+By comparing the accuracy of the two model, we finally choose Random Forest for 
+the Prediction of the Testing Set.
+
+## Prediction on Training Set
+
+We now apply Random Forest to the Prediction and the result is shown as follows.
+
+```{r Prediction, cache=TRUE}
+PredictTest <- predict(mod_rf, PreProcessedTestSet)
+PredictTest
+```
+
+After checking with the final answer, the accuracy is `r 20/20*100`%.
